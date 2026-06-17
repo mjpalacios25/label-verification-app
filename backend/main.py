@@ -6,7 +6,8 @@ import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
+import httpx
+from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from openai import OpenAI, OpenAIError
@@ -27,13 +28,28 @@ from .services.llm_service import (
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     create_db_and_tables()
+    if not settings.MODAL_API_URL:
+        raise RuntimeError("MODAL_API_URL is not set — check backend/.env")
+    if not settings.MODAL_API_URL.rstrip("/").endswith("/v1"):
+        raise RuntimeError(f"MODAL_API_URL must end with /v1, got: {settings.MODAL_API_URL!r}")
+
+    models_url = settings.MODAL_API_URL.rstrip("/").removesuffix("/v1") + "/v1/models"
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as http:
+            resp = await http.get(models_url)
+            resp.raise_for_status()
+    except Exception as exc:
+        raise RuntimeError(
+            f"LLM endpoint unreachable at {settings.MODAL_API_URL!r}. "
+            f"Run: uv run mlx_lm.server --model {settings.MODEL_NAME!r} --port 8080  "
+            f"or point MODAL_API_URL at the Modal endpoint in backend/.env. Error: {exc}"
+        ) from exc
+
+    app.state.llm_client = OpenAI(
+        base_url=settings.MODAL_API_URL,
+        api_key=settings.MODAL_API_KEY or "none-needed",
+    )
     yield
-
-
-client = OpenAI(
-    base_url=settings.MODAL_API_URL,
-    api_key="none-needed",
-)
 
 app = FastAPI(title="Label Verification API", version="0.1.0", lifespan=lifespan)
 
@@ -51,11 +67,16 @@ def health():
     return {"status": "ok"}
 
 
+def _get_llm_client(request: Request) -> OpenAI:
+    return request.app.state.llm_client
+
+
 @app.post("/verify", response_model=DataCheck)
 def verify(
     images: list[UploadFile] = File(...),
     form: UploadFile = File(...),
     session: Session = Depends(get_session),
+    client: OpenAI = Depends(_get_llm_client),
 ):
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
@@ -78,7 +99,10 @@ def verify(
             pdf_result = extract_structured_data_pdf(str(form_path), client)
             check_result = validate_results(image_result, pdf_result)
         except OpenAIError as e:
-            raise HTTPException(status_code=502, detail="LLM service unavailable") from e
+            raise HTTPException(
+                status_code=502,
+                detail=f"LLM service unavailable at {settings.MODAL_API_URL}. Is the server running?",
+            ) from e
         except ValidationError as e:
             raise HTTPException(status_code=502, detail="LLM returned malformed output") from e
 

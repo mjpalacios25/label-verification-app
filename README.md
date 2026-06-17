@@ -61,7 +61,7 @@ NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
 
 **Option A — Local (Apple Silicon, uses mlx-lm):**
 ```bash
-uv run mlx_lm.server --model mlx-community/Qwen3.5-2B-OptiQ-4bit --port 8080
+uv run python -m mlx_vlm.server --model mlx-community/Qwen3.5-2B-OptiQ-4bit --port 8080
 ```
 Then set `MODAL_API_URL=http://localhost:8080/v1` in `backend/.env`.
 

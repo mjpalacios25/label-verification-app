@@ -6,7 +6,7 @@ from pathlib import Path
 
 from PIL import Image
 import pymupdf
-from openai import OpenAI
+from openai import OpenAI, OpenAIError
 
 from ..config.main import settings
 from ..schemas import BeverageInfo, FormInfo, DataCheck
@@ -49,12 +49,18 @@ def extract_from_image(image_paths: list, client: OpenAI) -> BeverageInfo:
     response = client.chat.completions.create(
         model=settings.MODEL_NAME,
         messages=messages,
-        extra_body={
-            "guided_json": schema,
-            "chat_template_kwargs": {"enable_thinking": False},
-        },
+        response_format={
+            "type": "json_schema",
+            "json_schema": {
+                "name": "BeverageInfo",
+                "strict": True,
+                "schema": schema
+            }
+        }
     )
 
+    if not response.choices or response.choices[0].message.content is None:
+        raise OpenAIError("LLM returned an empty response")
     return BeverageInfo.model_validate_json(response.choices[0].message.content)
 
 
@@ -86,12 +92,18 @@ def extract_structured_data_pdf(pdf_path: str, client: OpenAI) -> FormInfo:
     response = client.chat.completions.create(
         model=settings.MODEL_NAME,
         messages=messages,
-        extra_body={
-            "guided_json": schema,
-            "chat_template_kwargs": {"enable_thinking": False},
-        },
+        response_format={
+            "type": "json_schema",
+            "json_schema": {
+                "name": "FormInfo",
+                "strict": True,
+                "schema": schema
+            }
+        }
     )
 
+    if not response.choices or response.choices[0].message.content is None:
+        raise OpenAIError("LLM returned an empty response")
     return FormInfo.model_validate_json(response.choices[0].message.content)
 
 
