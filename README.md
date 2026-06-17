@@ -59,7 +59,7 @@ NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
 
 ### 3. Start the LLM server
 
-**Option A — Local (Apple Silicon, uses mlx-lm):**
+**Option A — Local (Apple Silicon, uses mlx-vlm):**
 ```bash
 uv run python -m mlx_vlm.server --model mlx-community/Qwen3.5-2B-OptiQ-4bit --port 8080
 ```
