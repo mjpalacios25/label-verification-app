@@ -7,6 +7,7 @@ from pathlib import Path
 from PIL import Image
 import pymupdf
 from openai import OpenAI, OpenAIError
+from rapidfuzz import fuzz
 
 from ..config.main import settings
 from ..schemas import BeverageInfo, FormInfo, DataCheck
@@ -115,6 +116,9 @@ _CANONICAL_WARNING = (
 )
 
 
+_WARNING_SIMILARITY_THRESHOLD = 90
+
+
 def _normalize_warning(text: str) -> str:
     return _re.sub(r"\s+", " ", text.lower().strip())
 
@@ -136,8 +140,11 @@ def validate_results(image_results: BeverageInfo, pdf_results: FormInfo) -> Data
     )
 
     warning_match = (
-        _normalize_warning(image_results.warning_label_text)
-        == _normalize_warning(_CANONICAL_WARNING)
+        fuzz.ratio(
+            _normalize_warning(image_results.warning_label_text),
+            _normalize_warning(_CANONICAL_WARNING),
+        )
+        >= _WARNING_SIMILARITY_THRESHOLD
     )
 
     return DataCheck(

@@ -17,6 +17,7 @@ import pytest
 from backend.schemas import BeverageInfo, DataCheck, FormInfo
 from backend.services.llm_service import (
     _CANONICAL_WARNING,
+    _WARNING_SIMILARITY_THRESHOLD,
     encode_image,
     validate_results,
 )
@@ -360,6 +361,60 @@ class TestValidateResultsWarningMatch:
 
         # Assert
         assert result.warning_match == "no"
+
+    def test_minor_character_substitutions_returns_yes(self):
+        # Arrange — 5 char typos: "Surgeom", "Generel", "pregnency"
+        # fuzz.ratio of normalized strings ≈ 98.9, well above threshold of 90
+        typo_warning = _CANONICAL_WARNING.replace(
+            "Surgeon", "Surgeom"
+        ).replace(
+            "General", "Generel"
+        ).replace(
+            "pregnancy", "pregnency"
+        )
+        image_data = make_beverage(warning_label_text=typo_warning)
+        form_data = make_form()
+
+        # Act
+        result = validate_results(image_data, form_data)
+
+        # Assert
+        assert result.warning_match == "yes"
+
+    def test_punctuation_variation_returns_yes(self):
+        # Arrange — replace both commas with semicolons
+        # fuzz.ratio of normalized strings ≈ 99.3, above threshold of 90
+        semicolon_warning = _CANONICAL_WARNING.replace(",", ";")
+        image_data = make_beverage(warning_label_text=semicolon_warning)
+        form_data = make_form()
+
+        # Act
+        result = validate_results(image_data, form_data)
+
+        # Assert
+        assert result.warning_match == "yes"
+
+    def test_first_sentence_only_returns_no(self):
+        # Arrange — second clause entirely absent
+        # fuzz.ratio of normalized strings ≈ 70.9, below threshold of 90
+        partial_warning = (
+            "GOVERNMENT WARNING: (1) According to the Surgeon General, "
+            "women should not drink alcoholic beverages during pregnancy "
+            "because of the risk of birth defects."
+        )
+        image_data = make_beverage(warning_label_text=partial_warning)
+        form_data = make_form()
+
+        # Act
+        result = validate_results(image_data, form_data)
+
+        # Assert
+        assert result.warning_match == "no"
+
+    def test_similarity_threshold_is_90(self):
+        # Arrange / Act — no schema objects needed; just validate the constant
+        # Assert — locks the threshold so a casual change is caught by CI
+        assert _WARNING_SIMILARITY_THRESHOLD == 90
 
 
 # ---------------------------------------------------------------------------
